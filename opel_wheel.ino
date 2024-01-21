@@ -38,6 +38,7 @@ int wheelPin=A1; // steering wheel resistance reading pin
 
 int i=0;
 int prevButton=0;
+int delayedCommand=0;  // some buttons should delay reaction to decide if this is a hold command or not
 boolean flag = false;  //The flag that the previously held button is repeated
 unsigned long time;// variable for storing time
 
@@ -96,6 +97,12 @@ void loop() {
     time = millis(); 
     flag = false;
     prevButton=currButton; 
+    if (delayedCommand) {
+      SendCommand(delayedCommand);   
+      Serial.print("Sending delayed command: 0x");      
+      Serial.println(delayedCommand, HEX);
+      delayedCommand=0;
+    }
 
     // send command to JVC car stereo
     switch(currButton) {
@@ -110,27 +117,28 @@ void loop() {
         break;
 
       case TR_NEXT:
-        SendCommand(CMD_TRACKFORW);  
-        Serial.println("TR_NEXT"); 
+        delayedCommand=CMD_TRACKFORW;
+        Serial.println("delaying command TR_NEXT"); 
         break;
 
       case TR_PREV: 
-        SendCommand(CMD_TRACKBACK);   
-        Serial.println("TR_PREV"); 
+        delayedCommand=CMD_TRACKBACK;
+        Serial.println("delaying command TR_PREV"); 
         break;
 
       case MODE:
-        SendCommand(CMD_FOLDERFORW);  
-        Serial.println("MODE");            
+        delayedCommand=CMD_FOLDERFORW;
+        Serial.println("delaying command MODE");            
         break;
 
       case ON_OFF:
-        SendCommand(CMD_MUTE);   
-        Serial.println("MUTE"); 
+        delayedCommand=CMD_MUTE;
+        Serial.println("delaying command MUTE"); 
         break;
     }
   } else {
     if (millis() >= (time + HOLDTIME) && !flag) {
+      delayedCommand=0;
       switch(currButton) {
         case ON_OFF:
           SendCommand(CMD_ON_OFF);   
