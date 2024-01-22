@@ -1,4 +1,4 @@
-// https://raw.githubusercontent.com/dbuezas/lgt8fx/master/package_lgt8fx_index.json
+// Install https://raw.githubusercontent.com/dbuezas/lgt8fx/master/package_lgt8fx_index.json package, if used on "WAVGAT" board
 
 // On-board LED, useful for debugging
 #define LEDPIN     13 // D13
@@ -11,7 +11,9 @@
 
 #define OUTPUTPIN   8 // D8
 
-#define HOLDTIME 400 //Assign the time after which the button is considered clamped
+#define PRESSTIME 10 // Accept buttons only if pressed at least this long (ms)
+
+#define HOLDTIME 400 // Assign the time (ms) after which the button is considered clamped
 
 // remote control commands for OPEL
 const int TR_NEXT=1;
@@ -37,7 +39,8 @@ const int ON_OFF=6;
 int wheelPin=A1; // steering wheel resistance reading pin
 
 int i=0;
-int prevButton=0;
+int prevButton=-1;
+int lastValue=0;
 int delayedCommand=0;  // some buttons should delay reaction to decide if this is a hold command or not
 boolean flag = false;  //The flag that the previously held button is repeated
 unsigned long time;// variable for storing time
@@ -57,15 +60,18 @@ int getWheelButton()
   // read resistance value from the steering wheel buttons
   int r=getAvgValue();
   //Serial.println(r);
+  lastValue = r;
  
   // below values are for OPEL steering wheel controls and 470 Ohms known resistor
-  if (r>=140 && r<=180) return(VOL_DOWN);   //   85 Ohm (0.77V) 166 is a typical value
-  if (r>=240 && r<=300) return(VOL_UP);     //  170 Ohm (1.33V) 267
-  if (r>=340 && r<=400) return(ON_OFF);     //  290 Ohm (1.91V) 345-355
-  if (r>=430 && r<=510) return(TR_NEXT);    //  470 Ohm (2.5V)  440
-  if (r>=550 && r<=650) return(TR_PREV);    //  800 Ohm (3.15V) 576
-  if (r>=670 && r<=800) return(MODE);       // 1500 Ohm (3.81V) 676
+  if (r>=130 && r<=195) return(VOL_DOWN);   //   85 Ohm (0.77V) 166 is a typical value  140-150
+  if (r>=240 && r<=330) return(VOL_UP);     //  170 Ohm (1.33V) 267  280-300
+  if (r>=340 && r<=420) return(ON_OFF);     //  290 Ohm (1.91V) 345-355  360-380
+  if (r>=430 && r<=540) return(TR_NEXT);    //  470 Ohm (2.5V)  440  510-520
+  if (r>=550 && r<=680) return(TR_PREV);    //  800 Ohm (3.15V) 576   640
+  if (r>=690 && r<=830) return(MODE);       // 1500 Ohm (3.81V) 676   770
   //if (r>=900) return(0); // Error, probably broken wiring
+  lastValue = 0;
+
   return (0);
 }
 
@@ -73,7 +79,7 @@ int getWheelButton()
 
 int getAvgValue()
 {
-  long sum = 0;
+  unsigned long sum = 0;
   int succCounter = 0; int lastRead = 0;
   for(int i=0; i<NUM_READS; i++) {
     int curr = analogRead(wheelPin);
@@ -93,6 +99,7 @@ int getAvgValue()
 
 void loop() {
   int currButton=getWheelButton(); // get current pressed button code
+  //  Serial.println(lastValue);
   if (currButton!=prevButton) { // if it has changed since last reading
     time = millis(); 
     flag = false;
@@ -103,77 +110,88 @@ void loop() {
       Serial.println(delayedCommand, HEX);
       delayedCommand=0;
     }
-
-    // send command to JVC car stereo
-    switch(currButton) {
-      case VOL_UP:      
-        SendCommand(CMD_VOLUP);   
-        Serial.println("VOL_UP");
-        break;  
-
-      case VOL_DOWN:
-        SendCommand(CMD_VOLDOWN);   
-        Serial.println("VOL_DOWN");
-        break;
-
-      case TR_NEXT:
-        delayedCommand=CMD_TRACKFORW;
-        Serial.println("delaying command TR_NEXT"); 
-        break;
-
-      case TR_PREV: 
-        delayedCommand=CMD_TRACKBACK;
-        Serial.println("delaying command TR_PREV"); 
-        break;
-
-      case MODE:
-        delayedCommand=CMD_FOLDERFORW;
-        Serial.println("delaying command MODE");            
-        break;
-
-      case ON_OFF:
-        delayedCommand=CMD_MUTE;
-        Serial.println("delaying command MUTE"); 
-        break;
-    }
-  } else {
-    if (millis() >= (time + HOLDTIME) && !flag) {
+    delay(5);
+    return;
+  }
+  
+  if (currButton) {
+    if (millis() >= (time + HOLDTIME)) {
       delayedCommand=0;
+      if (!flag) {
+        switch(currButton) {
+          case ON_OFF:
+            SendCommand(CMD_ON_OFF);   
+            Serial.println("hold, ON_OFF"); 
+            break;
+
+          case TR_NEXT:
+            SendCommand(CMD_FOLDERFORW);  
+            Serial.println("hold, FOLDER_NEXT"); 
+            delay(800);
+            break;
+
+          case TR_PREV: 
+            SendCommand(CMD_FOLDERBACK);   
+            Serial.println("hold, FOLDER_PREV"); 
+            delay(800);
+            break;
+
+          case VOL_UP:      
+            SendCommand(CMD_VOLUP);   
+            Serial.println("hold, VOL_UP");
+            delay(150);
+            break;
+
+          case VOL_DOWN:
+            SendCommand(CMD_VOLDOWN);   
+            Serial.println("hold, VOL_DOWN");
+            delay(150);
+            break;
+            
+          case MODE:
+            SendCommand(CMD_SOURCE);   
+            Serial.println("hold, change source");
+            time = millis();  
+            flag = true; // Prevent any further repeat for this
+            break;
+        }
+      }      
+
+      delay(5);
+      return;
+    } 
+    
+    if (millis() >= (time + PRESSTIME)) {
+      // send command to JVC car stereo
       switch(currButton) {
-        case ON_OFF:
-          SendCommand(CMD_ON_OFF);   
-          Serial.println("hold, ON_OFF"); 
-          break;
-
-        case TR_NEXT:
-          SendCommand(CMD_FOLDERFORW);  
-          Serial.println("hold, FOLDER_NEXT"); 
-          delay(800);
-          break;
-
-        case TR_PREV: 
-          SendCommand(CMD_FOLDERBACK);   
-          Serial.println("hold, FOLDER_PREV"); 
-          delay(800);
-          break;
-
         case VOL_UP:      
           SendCommand(CMD_VOLUP);   
-          Serial.println("hold, VOL_UP");
-          delay(150);
-          break;
+          Serial.println("VOL_UP");
+          break;  
 
         case VOL_DOWN:
           SendCommand(CMD_VOLDOWN);   
-          Serial.println("hold, VOL_DOWN");
-          delay(150);
+          Serial.println("VOL_DOWN");
           break;
-          
+
+        case TR_NEXT:
+          delayedCommand=CMD_TRACKFORW;
+          Serial.println("delaying command TR_NEXT"); 
+          break;
+
+        case TR_PREV: 
+          delayedCommand=CMD_TRACKBACK;
+          Serial.println("delaying command TR_PREV"); 
+          break;
+
         case MODE:
-          SendCommand(CMD_SOURCE);   
-          Serial.println("hold, change source");
-          time = millis();  
-          flag = true; // Prevent any further repeat for this
+          delayedCommand=CMD_FOLDERFORW;
+          Serial.println("delaying command MODE");            
+          break;
+
+        case ON_OFF:
+          delayedCommand=CMD_MUTE;
+          Serial.println("delaying command MUTE"); 
           break;
       }
     }
